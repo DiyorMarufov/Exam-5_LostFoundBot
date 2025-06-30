@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from './api/user/user.module';
 import { BotModule } from './api/bot/bot.module';
 import { session } from 'telegraf/session';
+import { ItemModule } from './api/item/item.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { session } from 'telegraf/session';
     }),
     BotModule,
     UserModule,
+    ItemModule,
   ],
 })
 export class AppModule {}

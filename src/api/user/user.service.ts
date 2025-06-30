@@ -14,6 +14,24 @@ export class UserService {
     try {
       const newUser = this.userRepo.create(createUserDto);
       await this.userRepo.save(newUser);
+      return newUser
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async findUserByTelegramId(
+    telegram_id: number,
+  ): Promise<object | boolean | undefined> {
+    try {
+      const user = await this.userRepo.findOne({
+        where: { telegram_id },
+      });
+
+      if (user) {
+        return user;
+      }
+      return false;
     } catch (e) {
       return errorCatch(e);
     }

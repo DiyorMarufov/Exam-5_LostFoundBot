@@ -1,5 +1,6 @@
 import { BaseEntity } from 'src/common/database/base.entity';
-import { Column, Entity } from 'typeorm';
+import { Column, Entity, OneToMany } from 'typeorm';
+import { ItemEntity } from './items.entity';
 
 @Entity('users')
 export class UserEntity extends BaseEntity {
@@ -14,4 +15,7 @@ export class UserEntity extends BaseEntity {
 
   @Column({ name: 'full_name', type: 'varchar' })
   full_name: string;
+
+  @OneToMany(() => ItemEntity, (item) => item.user)
+  items: ItemEntity[];
 }
