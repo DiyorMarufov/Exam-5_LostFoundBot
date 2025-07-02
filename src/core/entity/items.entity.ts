@@ -30,13 +30,15 @@ export class ItemEntity extends BaseEntity {
   @Column({ name: 'time_found_lost', type: 'varchar' })
   time_found_lost: string;
 
-  @Column({ name: 'contact_info', type: 'varchar' })
-  contact_info: string;
+  @Column({ name: 'is_resolved', type: 'boolean', default: false })
+  is_resolved: boolean = false;
 
-  @Column({ name: 'is_resolved', type: 'boolean' })
-  is_resolved: boolean;
-
-  @Column({ name: 'status', enum: ItemStatus })
+  @Column({
+    name: 'status',
+    type: 'enum',
+    enum: ItemStatus,
+    default: ItemStatus.PENDING,
+  })
   status: ItemStatus;
 
   @OneToMany(() => ItemImageEntity, (itemImage) => itemImage.item)

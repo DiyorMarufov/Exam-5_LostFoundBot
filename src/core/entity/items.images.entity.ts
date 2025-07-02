@@ -6,8 +6,8 @@ import { ItemEntity } from './items.entity';
 export class ItemImageEntity extends BaseEntity {
   @ManyToOne(() => ItemEntity, (item) => item.itemImages)
   @JoinColumn({ name: 'item_id', referencedColumnName: 'id' })
-  item: ItemEntity;
+  item?: ItemEntity;
 
-  @Column({ name: 'image_url', type: 'varchar' })
-  image_url: string;
+  @Column({ name: 'image_url', type: 'varchar',nullable:true })
+  image_url?: string;
 }

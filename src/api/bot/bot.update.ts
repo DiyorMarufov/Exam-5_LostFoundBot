@@ -35,19 +35,27 @@ export class BotUpdate {
     return await this.botService.onHearNewAnnouncement(ctx);
   }
 
+  @Action('not_available')
+  async onActionPhotoAvailable(
+    @Ctx() ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    return await this.botService.onActionPhotoAvailable(ctx);
+  }
+
   @Action('found_sth')
   async onActionFound(@Ctx() ctx: SessionContext): Promise<object | undefined> {
     return await this.botService.onActionFound(ctx);
   }
 
+  @Action('yes')
+  async onActionYes(@Ctx() ctx: SessionContext): Promise<object | undefined> {
+    return await this.botService.onActionYes(ctx);
+  }
+
   @Hears('Yordam')
   async onHearHelp(@Ctx() ctx: SessionContext): Promise<object | undefined> {
     return await this.botService.onHearHelp(ctx);
-  }
-
-  @Hears('Bekor qilish va aniq lokatsiyani yozish')
-  async onHearWriteLocation(@Ctx() ctx: SessionContext) {
-    return await this.botService.onHearWriteLocation(ctx);
   }
 
   @Command('yordam')
@@ -58,5 +66,12 @@ export class BotUpdate {
   @On('text')
   async onText(@Ctx() ctx: SessionContext): Promise<object | undefined> {
     return await this.botService.onText(ctx);
+  }
+
+  @On('photo')
+  async onPhotoFoundItem(
+    @Ctx() ctx: SessionContext,
+  ): Promise<object | undefined> {
+    return this.botService.onPhotoFoundItem(ctx);
   }
 }

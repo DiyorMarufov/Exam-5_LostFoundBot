@@ -30,7 +30,7 @@ export class LocationEntity extends BaseEntity {
   longitude: number;
 
   @Column({ name: 'description', type: 'varchar' })
-  desciption: string;
+  description: string;
 
   @OneToMany(() => ItemEntity, (item) => item.location)
   items: ItemEntity[];
