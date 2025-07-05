@@ -7,9 +7,12 @@ import { BaseEntity } from 'src/common/database/base.entity';
 
 @Entity('items')
 export class ItemEntity extends BaseEntity {
-  @ManyToOne(() => UserEntity, (user) => user.items)
+  @ManyToOne(() => UserEntity, (user) => user.items, {
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'user_id', referencedColumnName: 'id' })
-  user: string;
+  user: UserEntity;
 
   @Column({ name: 'type', enum: ItemType })
   type: ItemType;
@@ -20,9 +23,12 @@ export class ItemEntity extends BaseEntity {
   @Column({ name: 'description', type: 'text' })
   description: string;
 
-  @ManyToOne(() => LocationEntity, (location) => location.items)
+  @ManyToOne(() => LocationEntity, (location) => location.items, {
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'location_id', referencedColumnName: 'id' })
-  location: string;
+  location: LocationEntity;
 
   @Column({ name: 'date_found_lost', type: 'date' })
   date_found_lost: Date;

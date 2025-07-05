@@ -14,7 +14,7 @@ export class UserService {
     try {
       const newUser = this.userRepo.create(createUserDto);
       await this.userRepo.save(newUser);
-      return newUser
+      return newUser;
     } catch (e) {
       return errorCatch(e);
     }
@@ -22,7 +22,7 @@ export class UserService {
 
   async findUserByTelegramId(
     telegram_id: number,
-  ): Promise<object | boolean | undefined> {
+  ): Promise<UserEntity | undefined> {
     try {
       const user = await this.userRepo.findOne({
         where: { telegram_id },
@@ -31,9 +31,10 @@ export class UserService {
       if (user) {
         return user;
       }
-      return false;
+      return undefined
     } catch (e) {
-      return errorCatch(e);
+      errorCatch(e);
+      return undefined
     }
   }
 }

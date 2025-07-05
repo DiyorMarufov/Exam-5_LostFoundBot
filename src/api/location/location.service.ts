@@ -22,4 +22,20 @@ export class LocationService {
       return errorCatch(e);
     }
   }
+
+  async updateLocation(
+    itemId: string,
+    updateDto: object,
+  ): Promise<object | undefined | boolean> {
+    try {
+      const { affected } = await this.locationRepo.update(itemId, updateDto);
+
+      if (!affected) {
+        return false;
+      }
+      return true;
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
 }

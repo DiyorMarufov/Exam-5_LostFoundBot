@@ -4,10 +4,13 @@ import { ItemEntity } from './items.entity';
 
 @Entity('item-images')
 export class ItemImageEntity extends BaseEntity {
-  @ManyToOne(() => ItemEntity, (item) => item.itemImages)
+  @ManyToOne(() => ItemEntity, (item) => item.itemImages, {
+    onUpdate: 'CASCADE',
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'item_id', referencedColumnName: 'id' })
   item?: ItemEntity;
 
-  @Column({ name: 'image_url', type: 'varchar',nullable:true })
+  @Column({ name: 'image_url', type: 'varchar', nullable: true })
   image_url?: string;
 }

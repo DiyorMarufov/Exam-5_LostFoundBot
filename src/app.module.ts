@@ -6,7 +6,6 @@ import { UserModule } from './api/user/user.module';
 import { BotModule } from './api/bot/bot.module';
 import { session } from 'telegraf/session';
 import { ItemModule } from './api/item/item.module';
-import { AdminModule } from './api/admin/admin.module';
 import { LocationModule } from './api/location/location.module';
 
 @Module({
@@ -26,7 +25,6 @@ import { LocationModule } from './api/location/location.module';
     BotModule,
     UserModule,
     ItemModule,
-    AdminModule,
     LocationModule,
   ],
 })

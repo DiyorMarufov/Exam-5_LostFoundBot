@@ -11,7 +11,6 @@ import {
   LocationDistrict,
   LocationRegion,
 } from 'src/common/enum';
-import { AdminService } from '../admin/admin.service';
 import { CreateItemDto } from '../item/dto/create-item.dto';
 import { LocationService } from '../location/location.service';
 import { CreateLocationDto } from '../location/dto/create-location.dto';
@@ -20,17 +19,26 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ItemImageEntity } from 'src/core/entity/items.images.entity';
 import { ItemImageRepo } from 'src/core/repository/item.image.repository';
 import { ItemEntity } from 'src/core/entity/items.entity';
+import { UserEntity } from 'src/core/entity/users.entity';
+import { InputMediaPhoto } from 'telegraf/typings/core/types/typegram';
+import {
+  sendMessageFunctionAcceptance,
+  sendMessageFuncionReject,
+} from 'src/infrastructure/lib/functions/functions';
+import { DeepPartial } from 'typeorm';
 
 export interface SessionContext extends Context {
   session?: {
     phone?: string;
     full_name?: string;
-    user?: string;
+    user?: UserEntity;
+    itemId?: string;
     state?: string;
     type?: ItemType;
     title?: string;
     descriptionItem?: string;
-    location?: string;
+    location?: LocationEntity;
+    location_id?: string;
     region?: LocationRegion;
     district?: LocationDistrict;
     latitude?: number;
@@ -42,6 +50,7 @@ export interface SessionContext extends Context {
     saveImagesTimeout?: NodeJS.Timeout;
     is_resolved?: boolean;
     status?: ItemStatus;
+    admin_reject_reason?: string;
   };
 }
 
@@ -54,8 +63,12 @@ export class BotService implements OnModuleInit {
     @InjectRepository(ItemImageEntity)
     private readonly itemImageRepo: ItemImageRepo,
     @InjectBot() private readonly bot: Telegraf,
-    private readonly adminService: AdminService,
   ) {}
+
+  isAdmin(userId: number) {
+    const admins = [887964728];
+    return admins.includes(userId);
+  }
 
   async onModuleInit() {
     await this.bot.telegram.setMyCommands([
@@ -77,10 +90,10 @@ export class BotService implements OnModuleInit {
         telegramId = ctx.from.id;
       }
 
-      // if (this.adminService.isAdmin(telegramId)) {
-      //   await this.adminService.onStart(ctx);
-      //   return;
-      // }
+      if (this.isAdmin(telegramId)) {
+        await this.onStartAdmin(ctx);
+        return;
+      }
 
       const hasUser = await this.userService.findUserByTelegramId(telegramId);
 
@@ -116,14 +129,37 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
     }
   }
 
+  async onStartAdmin(ctx: SessionContext): Promise<object | undefined> {
+    try {
+      const userId = ctx.from?.id;
+      if (!userId || !this.isAdmin(userId)) {
+        return;
+      }
+
+      await ctx.reply(
+        `Admin bo'lim`,
+        Markup.keyboard([
+          ["Yangi e'lonlar"],
+          ['Tasdiqlanganlar', 'Rad etilganlar'],
+        ])
+          .resize()
+          .oneTime(),
+      );
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
   async onMain(ctx: SessionContext): Promise<object | undefined> {
     try {
       await ctx.reply(
         'Asosiy menyu:',
         Markup.keyboard([
-          ["Yangi e'lon berish", "E'lonlarni ko'rish"],
+          ["Yangi e'lon berish", "E'lonlarni ko'rish", "Mening e'lonlarim"],
           ['Yordam'],
-        ]).resize(),
+        ])
+          .resize()
+          .oneTime(),
       );
     } catch (e) {
       return errorCatch(e);
@@ -153,6 +189,20 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
     }
   }
 
+  async onHearNewAnnouncementAdmin(ctx: Context): Promise<object | undefined> {
+    try {
+      await ctx.reply(
+        `E'lon turini tanlang:`,
+        Markup.inlineKeyboard([
+          [Markup.button.callback('Topilgan buyumlar', 'found_items_admin')],
+          [Markup.button.callback("Yo'qolgan buyumlar", 'lost_items_admin')],
+        ]),
+      );
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
   async onHearNewAnnouncement(
     ctx: SessionContext,
   ): Promise<object | undefined> {
@@ -167,6 +217,46 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
           ]),
         );
       }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onHearAllAnouncement(ctx: SessionContext): Promise<object | undefined> {
+    try {
+      await ctx.reply(
+        `Qaysi turdagi e'lonlarni ko'rishni xohlaysiz?`,
+        Markup.inlineKeyboard([
+          [Markup.button.callback('Topilgan buyumlar', 'found_items')],
+          [Markup.button.callback("Yo'qolgan buyumlar", 'lost_items')],
+        ]),
+      );
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onHearViewEditMyAnnouncements(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    try {
+      await ctx.reply(
+        `Kerakli bo'limni tanlang:`,
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              'Mening topilgan buyumlarim',
+              'my_found_items',
+            ),
+          ],
+          [
+            Markup.button.callback(
+              "Mening yo'qolgan buyumlarim",
+              'my_lost_items',
+            ),
+          ],
+        ]),
+      );
     } catch (e) {
       return errorCatch(e);
     }
@@ -196,8 +286,21 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
     try {
       if (ctx.session) {
         ctx.session.state = 'creating_found_item';
-        await ctx.reply(`Buyum nomini kiriting:`);
-        await this.onText(ctx);
+        ctx.session.type = ItemType.FOUND;
+        await ctx.reply(`Topilgan buyumni nomini kiriting:`);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionLost(ctx: SessionContext): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        ctx.session.state = 'creating_found_item';
+        ctx.session.type = ItemType.LOST;
+        await ctx.reply("Yo'qolgan buyumni nomini kiriting");
       }
     } catch (e) {
       return errorCatch(e);
@@ -224,8 +327,8 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
           createLocation,
         )) as LocationEntity;
 
-        if (newLocation && 'id' in newLocation) {
-          ctx.session.location = newLocation.id;
+        if (newLocation) {
+          ctx.session.location = newLocation;
         }
 
         const user = ctx.session.user;
@@ -248,13 +351,13 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
         const createdItem = (await this.itemService.create(
           newItem,
         )) as ItemEntity;
-        if (createdItem && 'id' in createdItem) {
+        if (createdItem) {
           const { images } = ctx.session;
 
-          if (images) {
-            const imagesUrl = images.map((image: string) => ({
-              item: { id: createdItem.id },
-              image_url: image,
+          if (images && images.length > 0) {
+            const imagesUrl = images.map((imageUrl: string) => ({
+              item: createdItem,
+              image_url: imageUrl,
             }));
 
             await this.itemImageRepo.save(imagesUrl);
@@ -262,6 +365,556 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
           await ctx.reply(`Ma'lumotlaringiz muvaffaqiyatli saqlandi
 Admin tasdiqlaganidan so'ng, e'loningiz e'lonlar ro'yxatida ko'rinadi.`);
         }
+        await this.onMain(ctx);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionNot(ctx: SessionContext): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (
+        ctx.session &&
+        ctx.session.state === 'confirming_found_item_announcement'
+      ) {
+        ctx.session = {};
+        await this.onMain(ctx);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionFoundAllItemsAdmin(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      const items = await this.itemService.findAllFoundItemsAdmin();
+
+      if ((items as ItemEntity[]).length > 0 && ctx.session) {
+        for (let item of items as ItemEntity[]) {
+          ctx.session.itemId = item.id;
+          const mediaGroup: InputMediaPhoto[] = [];
+
+          item.itemImages.forEach((img, index) => {
+            mediaGroup.push({
+              type: 'photo',
+              media: img.image_url as string,
+              caption:
+                index === 0
+                  ? `Yangi e'lon\n\n🟢 *Topilgan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Topuvchi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}`
+                  : undefined,
+              parse_mode: index === 0 ? 'Markdown' : undefined,
+            });
+          });
+          const chunkSize = 10;
+          for (let i = 0; i < mediaGroup.length; i += chunkSize) {
+            const chunk = mediaGroup.slice(i, i + chunkSize);
+            await ctx.replyWithMediaGroup(chunk);
+            await ctx.reply(
+              `Elonni tasdiqlaysizmi:`,
+              Markup.inlineKeyboard([
+                [Markup.button.callback('✅ Ha', 'confirm_found_item_admin')],
+                [Markup.button.callback("❌ Yo'q", 'reject_found_item_admin')],
+              ]),
+            );
+          }
+        }
+      } else {
+        await ctx.reply(
+          `🔍 Topilgan buyumlar bo‘limida hozircha e’lonlar mavjud emas.`,
+        );
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionLostAllItemsAdmin(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      const items = await this.itemService.findAllLostItemsAdmin();
+
+      if ((items as ItemEntity[]).length > 0 && ctx.session) {
+        for (let item of items as ItemEntity[]) {
+          ctx.session.itemId = item.id;
+          const mediaGroup: InputMediaPhoto[] = [];
+          if (item.itemImages.length > 0) {
+            item.itemImages.forEach((img, index) => {
+              mediaGroup.push({
+                type: 'photo',
+                media: img.image_url as string,
+                caption:
+                  index === 0
+                    ? `Yangi e'lon\n\n🟢 *Yo'qolgan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Egasi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}`
+                    : undefined,
+                parse_mode: index === 0 ? 'Markdown' : undefined,
+              });
+            });
+            const chunkSize = 10;
+            for (let i = 0; i < mediaGroup.length; i += chunkSize) {
+              const chunk = mediaGroup.slice(i, i + chunkSize);
+              await ctx.replyWithMediaGroup(chunk);
+              await ctx.reply(
+                `Elonni tasdiqlaysizmi:`,
+                Markup.inlineKeyboard([
+                  [Markup.button.callback('✅ Ha', 'confirm_found_item_admin')],
+                  [
+                    Markup.button.callback(
+                      "❌ Yo'q",
+                      'reject_found_item_admin',
+                    ),
+                  ],
+                ]),
+              );
+            }
+          } else {
+            const text = `Rasm mavjud emas!\n\nYangi e'lon\n\n🟢 *Yo'qolgan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Egasi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}`;
+            await ctx.reply(text, {
+              parse_mode: 'Markdown',
+              // @ts-ignore
+              disable_web_page_preview: true,
+            });
+            await ctx.reply(
+              `Elonni tasdiqlaysizmi:`,
+              Markup.inlineKeyboard([
+                [Markup.button.callback('✅ Ha', 'confirm_found_item_admin')],
+                [Markup.button.callback("❌ Yo'q", 'reject_found_item_admin')],
+              ]),
+            );
+          }
+        }
+      } else {
+        await ctx.reply(
+          `🔍 Yo'qolgan buyumlar bo‘limida hozircha e’lonlar mavjud emas.`,
+        );
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionFoundItemAcceptance(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        const itemId = ctx.session.itemId;
+        const item = await this.itemService.updateItemStatusByIdForAcceptance(
+          itemId as string,
+        );
+        if (item) {
+          await ctx.reply(`Xabar foydalanuvchiga yuborildi`);
+          const userId = (item as ItemEntity).user.telegram_id;
+          await sendMessageFunctionAcceptance(
+            userId,
+            `✅ E’loningiz admin tomonidan tasdiqlandi.
+Endi barcha foydalanuvchilar ko‘rishi mumkin.`,
+          );
+          return;
+        }
+        await ctx.reply(`❌ Xatolik yuz berdi`);
+        return;
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionFoundItemReject(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        ctx.session.state = 'rejecting_found_item_admin';
+        await ctx.reply(`❌ Rad etish sababi?`);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionFoundAllItems(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      const items = await this.itemService.findAllFoundItems();
+
+      if ((items as ItemEntity[]).length > 0) {
+        for (let item of items as ItemEntity[]) {
+          const mediaGroup: InputMediaPhoto[] = [];
+
+          item.itemImages.forEach((img, index) => {
+            mediaGroup.push({
+              type: 'photo',
+              media: img.image_url as string,
+              caption:
+                index === 0
+                  ? `🟢 *Topilgan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Topuvchi:* [${item.user.username}](https://t.me/${item.user.username}) < bog'lanish uchun shuni ustiga bosing\n📞 *Telefon:* ${item.user.phone_number}`
+                  : undefined,
+              parse_mode: index === 0 ? 'Markdown' : undefined,
+            });
+          });
+          const chunkSize = 10;
+          for (let i = 0; i < mediaGroup.length; i += chunkSize) {
+            const chunk = mediaGroup.slice(i, i + chunkSize);
+            await ctx.replyWithMediaGroup(chunk);
+          }
+        }
+      } else {
+        await ctx.reply(
+          `🔍 Topilgan buyumlar bo‘limida hozircha e’lonlar mavjud emas.`,
+        );
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionLostAllItems(ctx: SessionContext): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      const items = await this.itemService.findAllLostItems();
+
+      if ((items as ItemEntity[]).length > 0) {
+        for (let item of items as ItemEntity[]) {
+          const mediaGroup: InputMediaPhoto[] = [];
+
+          if (item.itemImages.length > 0) {
+            item.itemImages.forEach((img, index) => {
+              mediaGroup.push({
+                type: 'photo',
+                media: img.image_url as string,
+                caption:
+                  index === 0
+                    ? `🟢 *Yo'qolgan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Egasi:* [${item.user.username}](https://t.me/${item.user.username}) < bog'lanish uchun shuni ustiga bosing\n📞 *Telefon:* ${item.user.phone_number}`
+                    : undefined,
+                parse_mode: index === 0 ? 'Markdown' : undefined,
+              });
+            });
+            const chunkSize = 10;
+            for (let i = 0; i < mediaGroup.length; i += chunkSize) {
+              const chunk = mediaGroup.slice(i, i + chunkSize);
+              await ctx.replyWithMediaGroup(chunk);
+            }
+          } else {
+            const text = `Rasm mavjud emas!\n\n🟢 *Yo'qolgan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Egasi:* [${item.user.username}](https://t.me/${item.user.username}) < bog'lanish uchun shuni ustiga bosing\n📞 *Telefon:* ${item.user.phone_number}`;
+            await ctx.reply(text, {
+              parse_mode: 'Markdown',
+              // @ts-ignore
+              disable_web_page_preview: true,
+            });
+          }
+        }
+      } else {
+        await ctx.reply(
+          `🔍 Yo'qolgan buyumlar bo‘limida hozircha e’lonlar mavjud emas.`,
+        );
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionResendItem(ctx: SessionContext): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session && ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+        const data = ctx.callbackQuery.data;
+        const itemId = data.split(':')[1];
+        const updated = await this.itemService.updateItemStatusByIdForPending(
+          itemId as string,
+        );
+
+        if (updated) {
+          await ctx.reply(
+            `E'loningiz adminga qayta yuborildi,admin javobini tez orada yozib yuboradi`,
+          );
+          return;
+        }
+        await ctx.reply(`Tizimda xatolik`);
+        return;
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionDeleteItem(ctx: SessionContext): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session && ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+        const data = ctx.callbackQuery.data;
+        const itemId = data.split(':')[1];
+        const affected = await this.itemService.deleteItemById(
+          itemId as string,
+        );
+        if (affected) {
+          await ctx.reply(`✅ E’lon o‘chirildi`);
+          return;
+        }
+        await ctx.reply(`Tizimda xatolik`);
+        return;
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionViewEditMyFoundItems(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (!ctx.from) {
+        return;
+      }
+
+      const items = await this.itemService.findAllFoundItemsUser(ctx.from.id);
+
+      if ((items as ItemEntity[]).length > 0 && ctx.session) {
+        for (let item of items as ItemEntity[]) {
+          const mediaGroup: InputMediaPhoto[] = [];
+          ctx.session.itemId = item.id;
+          let statusUz: string = 'kutilmoqda';
+
+          if (item.status === ItemStatus.APPROVED) {
+            statusUz = 'faol';
+          } else if (item.status === ItemStatus.REJECTED) {
+            statusUz = 'bekor qilindi';
+          }
+
+          item.itemImages.forEach((img, index) => {
+            mediaGroup.push({
+              type: 'photo',
+              media: img.image_url as string,
+              caption:
+                index === 0
+                  ? `🟢 *Topilgan buyumlarim*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Topuvchi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}\n📝 *Holati:* ${statusUz}`
+                  : undefined,
+              parse_mode: index === 0 ? 'Markdown' : undefined,
+            });
+          });
+          const chunkSize = 10;
+          for (let i = 0; i < mediaGroup.length; i += chunkSize) {
+            const chunk = mediaGroup.slice(i, i + chunkSize);
+            await ctx.replyWithMediaGroup(chunk);
+            await ctx.reply(
+              "Ma'lumotlaringizni yangilamoqchimisiz yoki o'chirmoqchimisiz?\n\n" +
+                'Agar hech qanday amal bajarmasangiz, tugmani bosishingiz shart emas.',
+              Markup.inlineKeyboard([
+                [
+                  Markup.button.callback('🔄 Yangilash', 'update_my_item'),
+                  Markup.button.callback("❌ O'chirish", `delete_my_item`),
+                ],
+              ]),
+            );
+          }
+        }
+      } else {
+        await ctx.reply('🔍 Hozircha topilgan buyumlaringiz mavjud emas.');
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionViewEditMyLostItems(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (!ctx.from) {
+        return;
+      }
+
+      const items = await this.itemService.findAllLostItemsUser(ctx.from.id);
+
+      if ((items as ItemEntity[]).length > 0 && ctx.session) {
+        for (let item of items as ItemEntity[]) {
+          const mediaGroup: InputMediaPhoto[] = [];
+          ctx.session.itemId = item.id;
+          let statusUz: string = 'kutilmoqda';
+
+          if (item.status === ItemStatus.APPROVED) {
+            statusUz = 'faol';
+          } else if (item.status === ItemStatus.REJECTED) {
+            statusUz = 'bekor qilindi';
+          }
+
+          if (item.itemImages.length > 0) {
+            item.itemImages.forEach((img, index) => {
+              mediaGroup.push({
+                type: 'photo',
+                media: img.image_url as string,
+                caption:
+                  index === 0
+                    ? `🟢 *Yo'qolgan buyumlarim*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Egasi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}\n📝 *Holati:* ${statusUz}`
+                    : undefined,
+                parse_mode: index === 0 ? 'Markdown' : undefined,
+              });
+            });
+            const chunkSize = 10;
+            for (let i = 0; i < mediaGroup.length; i += chunkSize) {
+              const chunk = mediaGroup.slice(i, i + chunkSize);
+              await ctx.replyWithMediaGroup(chunk);
+              await ctx.reply(
+                "Ma'lumotlaringizni yangilamoqchimisiz yoki o'chirmoqchimisiz?\n\n" +
+                  'Agar hech qanday amal bajarmasangiz, tugmani bosishingiz shart emas.',
+                Markup.inlineKeyboard([
+                  [
+                    Markup.button.callback('🔄 Yangilash', 'update_my_item'),
+                    Markup.button.callback("❌ O'chirish", `delete_my_item`),
+                  ],
+                ]),
+              );
+            }
+          } else {
+            const text = `Rasm mavjud emas!\n\n🟢 *Yo'qolgan buyumlarim*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Egasi:* [${item.user.username}](https://t.me/${item.user.username}) < bog'lanish uchun shuni ustiga bosing\n📞 *Telefon:* ${item.user.phone_number}\n📝 *Holati:* ${statusUz}`;
+            await ctx.reply(text, {
+              parse_mode: 'Markdown',
+              // @ts-ignore
+              disable_web_page_preview: true,
+            });
+            await ctx.reply(
+              "Ma'lumotlaringizni yangilamoqchimisiz yoki o'chirmoqchimisiz?\n\n" +
+                'Agar hech qanday amal bajarmasangiz, tugmani bosishingiz shart emas.',
+              Markup.inlineKeyboard([
+                [
+                  Markup.button.callback('🔄 Yangilash', 'update_my_item'),
+                  Markup.button.callback("❌ O'chirish", `delete_my_item`),
+                ],
+              ]),
+            );
+          }
+        }
+      } else {
+        await ctx.reply("🔍 Hozircha yo'qolgan buyumlaringiz mavjud emas.");
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionUpdateUserItem(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.from && ctx.session) {
+        const item = await this.itemService.findItemByTelegramId(ctx.from.id);
+        ctx.session.itemId = (item as ItemEntity).id;
+      }
+      await ctx.reply(
+        `Qaysi malumotingizni yangilamohchisz?`,
+        Markup.inlineKeyboard([
+          [Markup.button.callback('Buyum nomi', 'item_title')],
+          [Markup.button.callback('Buyum joyi', 'item_location_description')],
+          [Markup.button.callback('Buyum sana', 'item_date')],
+          [Markup.button.callback('Buyum vahti', 'item_time')],
+          [Markup.button.callback('Buyum tavsifi', 'item_description')],
+          // [Markup.button.callback('Buyum rasmi', 'item_images')],
+        ]),
+      );
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionDeleteUserItem(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        const itemId = ctx.session.itemId;
+
+        const deletedItem = await this.itemService.deleteItemById(
+          itemId as string,
+        );
+        if (deletedItem) {
+          await ctx.reply(`E'loningiz muvaffaqiyatli o'chirildi`);
+          return;
+        }
+        await ctx.reply(`Tizimda xatolik`);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionUpdateUserItemTitle(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        ctx.session.state = 'updating_user_found_item_title';
+        await ctx.reply(`Buyum nomini kiriting:`);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionUpdateUserItemLocationDescription(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        ctx.session.state = 'updating_user_found_item_location_description';
+        await ctx.reply(`Buyum joyini kiriting:`);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionUpdateUserItemDate(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        ctx.session.state = 'updating_user_found_item_date';
+        await ctx.reply(`Buyum sanani kiriting:`);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionUpdateUserItemTime(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        ctx.session.state = 'updating_user_found_item_time';
+        await ctx.reply(`Buyum vahtini kiriting:`);
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onActionUpdateUserItemDescription(
+    ctx: SessionContext,
+  ): Promise<object | undefined> {
+    await ctx.answerCbQuery();
+    try {
+      if (ctx.session) {
+        ctx.session.state = 'updating_user_found_item_description';
+        await ctx.reply(`Buyum tavsifini kiriting:`);
       }
     } catch (e) {
       return errorCatch(e);
@@ -300,9 +953,220 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
     }
   }
 
-  async onText(ctx: SessionContext): Promise<object | undefined> {
+  async onTextFoundLostItem(ctx: SessionContext): Promise<object | undefined> {
     try {
       if (!ctx.session) ctx.session = {};
+
+      if (
+        ctx.session.state === 'updating_user_found_item_title' &&
+        ctx.message &&
+        'text' in ctx.message
+      ) {
+        const text = ctx.message.text;
+        const itemId = ctx.session.itemId;
+
+        const item: Partial<ItemEntity> = {
+          title: text,
+        };
+
+        const updatedItem = await this.itemService.updateItem(
+          itemId as string,
+          item,
+        );
+
+        if (updatedItem) {
+          await ctx.reply(`Buyum nomi muvaffaqiyatli o'zgardi`);
+          return;
+        }
+        await ctx.reply(`Tizimda xatolik`);
+      }
+
+      if (
+        ctx.session.state === 'updating_user_found_item_location_description' &&
+        ctx.message &&
+        'text' in ctx.message
+      ) {
+        const text = ctx.message.text;
+        const itemObj = await this.itemService.findItemById(
+          ctx.session.itemId as string,
+        );
+        const locationId = (itemObj as ItemEntity).location.id;
+
+        const item: Partial<LocationEntity> = {
+          description: text,
+        };
+        const updatedLocation = await this.locationService.updateLocation(
+          locationId as string,
+          item,
+        );
+
+        if (updatedLocation) {
+          await ctx.reply(`Buyum joyi muvaffaqiyatli o'zgardi`);
+          return;
+        }
+        await ctx.reply(`Tizimda xatolik`);
+      }
+
+      if (
+        ctx.session.state === 'updating_user_found_item_date' &&
+        ctx.message &&
+        'text' in ctx.message
+      ) {
+        const text = ctx.message.text;
+        const itemId = ctx.session.itemId;
+
+        const checkDash = text.split('');
+        if (checkDash[4] !== '-' && checkDash[7] !== '-') {
+          await ctx.reply(
+            `❌ Iltimos korsatilgan korinishida sanani kiriting!`,
+          );
+          return;
+        }
+
+        if (checkDash.length > 10) {
+          await ctx.reply(
+            `❌ Ortiqcha ma'lumot kiritish mumkin emas faqat sanani kiriting`,
+          );
+          return;
+        }
+        const [year, month, day] = text.split('-');
+
+        const currentYear = new Date().getFullYear();
+        if (Number(year) > currentYear) {
+          await ctx.reply(
+            `❌ Hali bunday yil kelmadi. Hozir ${currentYear}-yil.`,
+          );
+          return;
+        }
+
+        if (Number(month) > 12) {
+          await ctx.reply(`❌ Bunday oy mavjud emas.`);
+          return;
+        }
+
+        if (Number(day) > 31) {
+          await ctx.reply(
+            `❌ Oyda maksimum 31 kun bo‘ladi. Ba'zi oylarda 30 yoki 28-29 kun bor.`,
+          );
+
+          return;
+        }
+
+        const item: Partial<ItemEntity> = {
+          date_found_lost: new Date(text),
+        };
+
+        const updatedItem = await this.itemService.updateItem(
+          itemId as string,
+          item,
+        );
+
+        if (updatedItem) {
+          await ctx.reply(`Buyum sanasi muvaffaqiyatli o'zgardi`);
+          return;
+        }
+        await ctx.reply(`Tizimda xatolik`);
+      }
+
+      if (
+        ctx.session.state === 'updating_user_found_item_time' &&
+        ctx.message &&
+        'text' in ctx.message
+      ) {
+        const text = ctx.message.text;
+        const itemId = ctx.session.itemId;
+
+        const checkColon = text.split('');
+
+        if (checkColon[2] !== ':') {
+          await ctx.reply(
+            "❌ Iltimos vaqtni ko'rsatilgan ko'rinishda kiriting",
+          );
+          return;
+        }
+
+        if (text.length > 5) {
+          await ctx.reply(
+            `❌ Ortiqcha ma'lumot kiritish mumkin emas faqat vaqtni kiriting`,
+          );
+          return;
+        }
+
+        const [hour, minute] = text.split(':');
+
+        if (Number(hour) > 23) {
+          await ctx.reply(`❌ 1 kunda 24 soat mavjud`);
+          return;
+        }
+
+        if (Number(minute) > 59) {
+          await ctx.reply(`❌ 1 soatda 60 minut mavjud`);
+          return;
+        }
+
+        const item: Partial<ItemEntity> = {
+          time_found_lost: text,
+        };
+
+        const updatedItem = await this.itemService.updateItem(
+          itemId as string,
+          item,
+        );
+
+        if (updatedItem) {
+          await ctx.reply(`Buyum vahti muvaffaqiyatli o'zgardi`);
+          return;
+        }
+        await ctx.reply(`Tizimda xatolik`);
+      }
+
+      if (
+        ctx.session.state === 'updating_user_found_item_description' &&
+        ctx.message &&
+        'text' in ctx.message
+      ) {
+        const text = ctx.message.text;
+        const itemId = ctx.session.itemId;
+
+        const item: Partial<ItemEntity> = {
+          description: text,
+        };
+
+        const updatedItem = await this.itemService.updateItem(
+          itemId as string,
+          item,
+        );
+
+        if (updatedItem) {
+          await ctx.reply(`Buyum tavsifi muvaffaqiyatli o'zgardi`);
+          return;
+        }
+        await ctx.reply(`Tizimda xatolik`);
+      }
+
+      if (
+        ctx.session.state === 'rejecting_found_item_admin' &&
+        ctx.message &&
+        'text' in ctx.message
+      ) {
+        ctx.session.admin_reject_reason = ctx.message.text;
+        if (ctx.session) {
+          const itemId = ctx.session.itemId;
+          const item = await this.itemService.updateItemStatusByIdForReject(
+            itemId as string,
+          );
+          if (item) {
+            await ctx.reply(`Xabar foydalanuvchiga yuborildi`);
+            const userId = (item as ItemEntity).user.telegram_id;
+            await sendMessageFuncionReject(
+              userId,
+              `❌ E’loningiz rad etildi.\n\n
+📝 Sabab: ${ctx.session.admin_reject_reason}`,
+              ctx,
+            );
+          }
+        }
+      }
 
       if (
         ctx.session.state === 'entering_fullName' &&
@@ -348,11 +1212,9 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
             const hasUser = await this.userService.findUserByTelegramId(
               ctx.from.id,
             );
-            if (hasUser && typeof hasUser === 'object' && 'id' in hasUser) {
+            if (hasUser && typeof hasUser === 'object') {
               // Item userId
-              ctx.session.user = String(hasUser.id);
-              // Item type
-              ctx.session.type = ItemType.FOUND;
+              ctx.session.user = hasUser;
 
               ctx.session.state = 'entering_found_item_descriptionItem';
               await ctx.reply(`Buyum tavsifini kiriting:`);
@@ -367,7 +1229,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
           ctx.session.state = 'entering_found_item_location';
           await ctx.reply(
-            'Buyumni qayerda topib oldingiz?\n\n' +
+            "Buyumni qayerda topdingiz yoki yo'qotdingiz?\n\n" +
               'Lokatsiya va manzilni yozib yuboring.\n' +
               'Viloyat yoki Shahar va Tuman.\n' +
               'Misol Toshkent Shahar Chilonzor tumani',
@@ -446,7 +1308,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
           ctx.session.state = 'entering_found_item_descriptionLocation';
           await ctx.reply(
-            ` Iltimos, buyumni topgan joyingizni aniq ko'rsating.\n\n` +
+            ` Iltimos, buyumni topgan yoki yo'qotgan joyingizni aniq ko'rsating.\n\n` +
               `Masalan:\n` +
               `Chilonzor tumani, 19-kvartal, 24-dom yonida.\n\n` +
               ` Iloji boricha to'liq va tushunarli lokatsiya yozing.`,
@@ -457,12 +1319,23 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
       ) {
         if (ctx.message && 'text' in ctx.message) {
           // Item desciptionLocation
-          const description = ctx.message.text;
-          ctx.session.descriptionLocation = description;
+          const description = ctx.message.text.toLowerCase();
+
+          const inputDistrict = description.split(' ')[0].toLowerCase();
+
+          if (ctx.session) {
+            if (ctx.session.district !== inputDistrict) {
+              await ctx.reply(
+                'Oldin kiritgan tumaningiz bilan hozir kiritgan tumaningiz bir xil emas.',
+              );
+              return;
+            }
+            ctx.session.descriptionLocation = description;
+          }
 
           ctx.session.state = 'entering_found_item_date';
           await ctx.reply(
-            'Buyumni topgan sanani quyidagi formatda kiriting:\n\n' +
+            "Buyumni topgan yoki yo'qotgan sanani quyidagi formatda kiriting:\n\n" +
               ' YIL-OY-KUN\n' +
               ' Masalan: 2020-04-04',
           );
@@ -471,30 +1344,103 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
         if (ctx.message && 'text' in ctx.message) {
           // Item date_found_lost
           const date = ctx.message.text;
+          const checkDash = date.split('');
+          if (checkDash[4] !== '-' && checkDash[7] !== '-') {
+            await ctx.reply(
+              `❌ Iltimos korsatilgan korinishida sanani kiriting!`,
+            );
+            return;
+          }
+
+          if (checkDash.length > 10) {
+            await ctx.reply(
+              `❌ Ortiqcha ma'lumot kiritish mumkin emas faqat sanani kiriting`,
+            );
+            return;
+          }
+          const [year, month, day] = date.split('-');
+
+          const currentYear = new Date().getFullYear();
+          if (Number(year) > currentYear) {
+            await ctx.reply(
+              `❌ Hali bunday yil kelmadi. Hozir ${currentYear}-yil.`,
+            );
+            return;
+          }
+
+          if (Number(month) > 12) {
+            await ctx.reply(`❌ Bunday oy mavjud emas.`);
+            return;
+          }
+
+          if (Number(day) > 31) {
+            await ctx.reply(
+              `❌ Oyda maksimum 31 kun bo‘ladi. Ba'zi oylarda 30 yoki 28-29 kun bor.`,
+            );
+
+            return;
+          }
+
           ctx.session.date_found_lost = date;
 
           ctx.session.state = 'entering_found_item_time';
           await ctx.reply(
-            'Buyumni taxminan soat nechchida topganingizni kiriting:\n\n' +
+            "Buyumni taxminan soat nechchida topganingizni yoki yo'qotganingizni kiriting:\n\n" +
               ' Format: SOAT-MINUT\n' +
-              ' Masalan: 13-30',
+              ' Masalan: 13:30',
           );
         }
       } else if (ctx.session.state === 'entering_found_item_time') {
         if (ctx.message && 'text' in ctx.message && ctx.from) {
           // Item time_found_lost
           const time = ctx.message.text;
+
+          const checkColon = time.split('');
+
+          if (time.length > 5) {
+            await ctx.reply(
+              `❌ Ortiqcha ma'lumot kiritish mumkin emas faqat vaqtni kiriting`,
+            );
+            return;
+          }
+
+          if (checkColon[2] !== ':') {
+            await ctx.reply(
+              "❌ Iltimos vaqtni ko'rsatilgan ko'rinishda kiriting",
+            );
+            return;
+          }
+
+          const [hour, minute] = time.split(':');
+
+          if (Number(hour) > 23) {
+            await ctx.reply(`❌ 1 kunda 24 soat mavjud`);
+            return;
+          }
+
+          if (Number(minute) > 59) {
+            await ctx.reply(`❌ 1 soatda 60 minut mavjud`);
+            return;
+          }
+
           ctx.session.time_found_lost = time;
 
-          ctx.session.state = 'entering_found_item_images';
-          await ctx.reply(
-            " Yo'qotgan buyumingizning rasmi bormi?\n\n" +
-              " Agar rasm mavjud bo'lsa, iltimos shu yerga yuklang.\n" +
-              ' Agar rasm mavjud bo\'lmasa, quyidagi "Yo\'q" tugmasini bosing.',
-            Markup.inlineKeyboard([
-              [Markup.button.callback("Yo'q", 'not_available')],
-            ]),
-          );
+          if (ctx.session.type === ItemType.FOUND) {
+            ctx.session.state = 'entering_found_item_images';
+            await ctx.reply('Topgan buyumingizning rasmini yuklang!');
+          } else if (ctx.session.type === ItemType.LOST) {
+            ctx.session.state = 'entering_found_item_images';
+            await ctx.reply(
+              ` Yo‘qolgan buyumingizning rasmi bormi?
+
+ Agar rasm mavjud bo‘lsa, iltimos, uni shu yerga yuklang.
+
+ Agar rasm mavjud bo‘lmasa, “Yo‘q” tugmasini bosing va davom eting.`,
+              Markup.inlineKeyboard([
+                [Markup.button.callback('Yoq', 'not_available')],
+              ]),
+            );
+          }
         }
       }
     } catch (e) {
@@ -508,10 +1454,9 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
         if (ctx.session.state === 'entering_found_item_images') {
           // Item images
           const largestPhoto = ctx.message.photo[ctx.message.photo.length - 1];
-          const fileLink = await ctx.telegram.getFileLink(largestPhoto.file_id);
 
           ctx.session.images = ctx.session.images || [];
-          ctx.session.images.push(fileLink.href);
+          ctx.session.images.push(largestPhoto.file_id);
 
           if (ctx.session.saveImagesTimeout) {
             clearTimeout(ctx.session.saveImagesTimeout);
