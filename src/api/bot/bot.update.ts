@@ -39,6 +39,20 @@ export class BotUpdate {
     return await this.botService.onHearNewAnnouncementAdmin(ctx);
   }
 
+  @Hears('Tasdiqlanganlar')
+  async onHearAccepetedAnnouncementsAdmin(
+    @Ctx() ctx: SessionContext,
+  ): Promise<object | undefined> {
+    return await this.botService.onHearAcceptedAnnouncementAdmin(ctx);
+  }
+
+  @Hears('Rad etilganlar')
+  async onHearRejectedAnnouncementsAdmin(
+    @Ctx() ctx: SessionContext,
+  ): Promise<object | undefined> {
+    return await this.botService.onHearRejectedAnnouncementAdmin(ctx);
+  }
+
   @Hears("Yangi e'lon berish")
   async onHearNewAnnouncement(
     @Ctx() ctx: SessionContext,
@@ -102,7 +116,7 @@ export class BotUpdate {
     return await this.botService.onActionLostAllItemsAdmin(ctx);
   }
 
-  @Action('confirm_found_item_admin')
+  @Action(/confirm_found_item_admin:.+/)
   async onActionFoundItemAcceptance(
     @Ctx() ctx: SessionContext,
   ): Promise<object | undefined> {
@@ -158,14 +172,14 @@ export class BotUpdate {
     return await this.botService.onActionViewEditMyLostItems(ctx);
   }
 
-  @Action('update_my_item')
+  @Action(/update_my_item:.+/)
   async onActionUpdateUserItem(
     @Ctx() ctx: SessionContext,
   ): Promise<object | undefined> {
     return await this.botService.onActionUpdateUserItem(ctx);
   }
 
-  @Action('delete_my_item')
+  @Action(/delete_my_item:.+/)
   async onActionDeleteUserItem(
     @Ctx() ctx: SessionContext,
   ): Promise<object | undefined> {

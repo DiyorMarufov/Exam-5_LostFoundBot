@@ -196,6 +196,36 @@ export class ItemService {
     }
   }
 
+  async findAllAcceptedAnnouncements(): Promise<object | undefined> {
+    try {
+      const items = await this.itemRepo.find({
+        where: { status: ItemStatus.APPROVED },
+        relations: ['user', 'location', 'itemImages'],
+      });
+      if (items) {
+        return items;
+      }
+      return [];
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async findAllRejectedAnnouncements(): Promise<object | undefined> {
+    try {
+      const items = await this.itemRepo.find({
+        where: { status: ItemStatus.REJECTED },
+        relations: ['user', 'location', 'itemImages'],
+      });
+      if (items) {
+        return items;
+      }
+      return [];
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
   async findItemByTelegramId(telegram_id: number): Promise<object | undefined> {
     try {
       const item = await this.itemRepo.findOne({

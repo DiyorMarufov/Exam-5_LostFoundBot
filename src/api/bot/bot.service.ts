@@ -25,7 +25,6 @@ import {
   sendMessageFunctionAcceptance,
   sendMessageFuncionReject,
 } from 'src/infrastructure/lib/functions/functions';
-import { DeepPartial } from 'typeorm';
 
 export interface SessionContext extends Context {
   session?: {
@@ -46,7 +45,8 @@ export interface SessionContext extends Context {
     descriptionLocation?: string;
     date_found_lost?: string;
     time_found_lost?: string;
-    images?: string[];
+    found_images?: string[];
+    lost_images?: string[];
     saveImagesTimeout?: NodeJS.Timeout;
     is_resolved?: boolean;
     status?: ItemStatus;
@@ -175,8 +175,9 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
           ctx.session.phone = phone;
           ctx.session.state = 'entering_fullName';
           await ctx.reply(
-            `Rahmat,endi ism-familyangizni kiriting(Misol: Akbar Shomansurov):`,
+            `✅ Rahmat! Endi iltimos, *ism va familyangizni* kiriting.\n\n_Misol: Akbar Shomansurov_`,
             {
+              parse_mode: 'Markdown',
               reply_markup: {
                 remove_keyboard: true,
               },
@@ -198,6 +199,94 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
           [Markup.button.callback("Yo'qolgan buyumlar", 'lost_items_admin')],
         ]),
       );
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onHearAcceptedAnnouncementAdmin(
+    ctx: Context,
+  ): Promise<object | undefined> {
+    try {
+      const items = await this.itemService.findAllAcceptedAnnouncements();
+
+      if ((items as ItemEntity[]).length > 0) {
+        for (let item of items as ItemEntity[]) {
+          const mediaGroup: InputMediaPhoto[] = [];
+
+          if (item.itemImages.length > 0) {
+            item.itemImages.forEach((img, index) => {
+              mediaGroup.push({
+                type: 'photo',
+                media: img.image_url as string,
+                caption:
+                  index === 0
+                    ? `🟢 *Qabul qilingan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Topuvchi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}\n📝 *Holati:* ${item.status}\n 🗂️ *Xil:* ${item.type}`
+                    : undefined,
+                parse_mode: index === 0 ? 'Markdown' : undefined,
+              });
+            });
+            const chunkSize = 10;
+            for (let i = 0; i < mediaGroup.length; i += chunkSize) {
+              const chunk = mediaGroup.slice(i, i + chunkSize);
+              await ctx.replyWithMediaGroup(chunk);
+            }
+          } else {
+            const text = `Rasm mavjud emas!\n\n🟢 *Qabul qilingan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Egasi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}\n📝 *Holati:* ${item.status}\n 🗂️ *Xil:* ${item.type}`;
+            await ctx.reply(text, {
+              parse_mode: 'Markdown',
+              // @ts-ignore
+              disable_web_page_preview: true,
+            });
+          }
+        }
+      } else {
+        await ctx.reply('🔍 Hozircha tasdiqlangan buyumlar mavjud emas.');
+      }
+    } catch (e) {
+      return errorCatch(e);
+    }
+  }
+
+  async onHearRejectedAnnouncementAdmin(
+    ctx: Context,
+  ): Promise<object | undefined> {
+    try {
+      const items = await this.itemService.findAllRejectedAnnouncements();
+
+      if ((items as ItemEntity[]).length > 0) {
+        for (let item of items as ItemEntity[]) {
+          const mediaGroup: InputMediaPhoto[] = [];
+
+          if (item.itemImages.length > 0) {
+            item.itemImages.forEach((img, index) => {
+              mediaGroup.push({
+                type: 'photo',
+                media: img.image_url as string,
+                caption:
+                  index === 0
+                    ? `❌ *Qabul qilinmagan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Topuvchi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}\n📝 *Holati:* ${item.status}\n 🗂️ *Xil:* ${item.type}`
+                    : undefined,
+                parse_mode: index === 0 ? 'Markdown' : undefined,
+              });
+            });
+            const chunkSize = 10;
+            for (let i = 0; i < mediaGroup.length; i += chunkSize) {
+              const chunk = mediaGroup.slice(i, i + chunkSize);
+              await ctx.replyWithMediaGroup(chunk);
+            }
+          } else {
+            const text = `Rasm mavjud emas!\n\❌ *Qabul qilinmagan buyumlar*\n\n👜 *Buyum:* ${item.title}\n📍 *Joy:* ${item.location.description}\n🕰 *Vaqt:* ${item.time_found_lost}, ${item.date_found_lost}\n📝 *Tavsif:* ${item.description}\n👤 *Egasi:* [${item.user.username}](https://t.me/${item.user.username})\n📞 *Telefon:* ${item.user.phone_number}\n📝 *Holati:* ${item.status}\n 🗂️ *Xil:* ${item.type}`;
+            await ctx.reply(text, {
+              parse_mode: 'Markdown',
+              // @ts-ignore
+              disable_web_page_preview: true,
+            });
+          }
+        }
+      } else {
+        await ctx.reply('🔍 Hozircha rad etilgan buyumlar mavjud emas.');
+      }
     } catch (e) {
       return errorCatch(e);
     }
@@ -287,7 +376,7 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
       if (ctx.session) {
         ctx.session.state = 'creating_found_item';
         ctx.session.type = ItemType.FOUND;
-        await ctx.reply(`Topilgan buyumni nomini kiriting:`);
+        await ctx.reply('🏷️ Iltimos, topilgan buyumning nomini kiriting');
       }
     } catch (e) {
       return errorCatch(e);
@@ -300,7 +389,7 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
       if (ctx.session) {
         ctx.session.state = 'creating_found_item';
         ctx.session.type = ItemType.LOST;
-        await ctx.reply("Yo'qolgan buyumni nomini kiriting");
+        await ctx.reply("🏷️ Iltimos, yo'qolgan buyumning nomini kiriting");
       }
     } catch (e) {
       return errorCatch(e);
@@ -352,20 +441,34 @@ Bu bot orqali *yo'qolgan yoki topilgan buyumlar* haqida e'lon berishingiz mumkin
           newItem,
         )) as ItemEntity;
         if (createdItem) {
-          const { images } = ctx.session;
+          if (createdItem.type === ItemType.FOUND) {
+            const { found_images } = ctx.session;
+            if (found_images && found_images.length > 0) {
+              const imagesUrl = found_images.map((imageUrl: string) => ({
+                item: createdItem,
+                image_url: imageUrl,
+              }));
 
-          if (images && images.length > 0) {
-            const imagesUrl = images.map((imageUrl: string) => ({
-              item: createdItem,
-              image_url: imageUrl,
-            }));
-
-            await this.itemImageRepo.save(imagesUrl);
-          }
-          await ctx.reply(`Ma'lumotlaringiz muvaffaqiyatli saqlandi
+              await this.itemImageRepo.save(imagesUrl);
+            }
+            await ctx.reply(`Ma'lumotlaringiz muvaffaqiyatli saqlandi
 Admin tasdiqlaganidan so'ng, e'loningiz e'lonlar ro'yxatida ko'rinadi.`);
+            await this.onMain(ctx);
+          } else if (createdItem.type === ItemType.LOST) {
+            const { lost_images } = ctx.session;
+            if (lost_images && lost_images.length > 0) {
+              const imagesUrl = lost_images.map((imageUrl: string) => ({
+                item: createdItem,
+                image_url: imageUrl,
+              }));
+
+              await this.itemImageRepo.save(imagesUrl);
+            }
+            await ctx.reply(`Ma'lumotlaringiz muvaffaqiyatli saqlandi
+Admin tasdiqlaganidan so'ng, e'loningiz e'lonlar ro'yxatida ko'rinadi.`);
+            await this.onMain(ctx);
+          }
         }
-        await this.onMain(ctx);
       }
     } catch (e) {
       return errorCatch(e);
@@ -417,8 +520,13 @@ Admin tasdiqlaganidan so'ng, e'loningiz e'lonlar ro'yxatida ko'rinadi.`);
             await ctx.reply(
               `Elonni tasdiqlaysizmi:`,
               Markup.inlineKeyboard([
-                [Markup.button.callback('✅ Ha', 'confirm_found_item_admin')],
-                [Markup.button.callback("❌ Yo'q", 'reject_found_item_admin')],
+                [
+                  Markup.button.callback(
+                    '✅ Ha',
+                    `confirm_found_item_admin:${ctx.session.itemId}`,
+                  ),
+                ],
+                [Markup.button.callback("❌ Yo'q", `reject_found_item_admin`)],
               ]),
             );
           }
@@ -463,11 +571,16 @@ Admin tasdiqlaganidan so'ng, e'loningiz e'lonlar ro'yxatida ko'rinadi.`);
               await ctx.reply(
                 `Elonni tasdiqlaysizmi:`,
                 Markup.inlineKeyboard([
-                  [Markup.button.callback('✅ Ha', 'confirm_found_item_admin')],
+                  [
+                    Markup.button.callback(
+                      '✅ Ha',
+                      `confirm_found_item_admin:${ctx.session.itemId}`,
+                    ),
+                  ],
                   [
                     Markup.button.callback(
                       "❌ Yo'q",
-                      'reject_found_item_admin',
+                      `reject_found_item_admin`,
                     ),
                   ],
                 ]),
@@ -483,8 +596,13 @@ Admin tasdiqlaganidan so'ng, e'loningiz e'lonlar ro'yxatida ko'rinadi.`);
             await ctx.reply(
               `Elonni tasdiqlaysizmi:`,
               Markup.inlineKeyboard([
-                [Markup.button.callback('✅ Ha', 'confirm_found_item_admin')],
-                [Markup.button.callback("❌ Yo'q", 'reject_found_item_admin')],
+                [
+                  Markup.button.callback(
+                    '✅ Ha',
+                    `confirm_found_item_admin:${ctx.session.itemId}`,
+                  ),
+                ],
+                [Markup.button.callback("❌ Yo'q", `reject_found_item_admin`)],
               ]),
             );
           }
@@ -504,8 +622,9 @@ Admin tasdiqlaganidan so'ng, e'loningiz e'lonlar ro'yxatida ko'rinadi.`);
   ): Promise<object | undefined> {
     await ctx.answerCbQuery();
     try {
-      if (ctx.session) {
-        const itemId = ctx.session.itemId;
+      if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+        const data = ctx.callbackQuery.data;
+        const itemId = data.split(':')[1];
         const item = await this.itemService.updateItemStatusByIdForAcceptance(
           itemId as string,
         );
@@ -712,8 +831,14 @@ Endi barcha foydalanuvchilar ko‘rishi mumkin.`,
                 'Agar hech qanday amal bajarmasangiz, tugmani bosishingiz shart emas.',
               Markup.inlineKeyboard([
                 [
-                  Markup.button.callback('🔄 Yangilash', 'update_my_item'),
-                  Markup.button.callback("❌ O'chirish", `delete_my_item`),
+                  Markup.button.callback(
+                    '🔄 Yangilash',
+                    `update_my_item:${ctx.session.itemId}`,
+                  ),
+                  Markup.button.callback(
+                    "❌ O'chirish",
+                    `delete_my_item:${ctx.session.itemId}`,
+                  ),
                 ],
               ]),
             );
@@ -771,8 +896,14 @@ Endi barcha foydalanuvchilar ko‘rishi mumkin.`,
                   'Agar hech qanday amal bajarmasangiz, tugmani bosishingiz shart emas.',
                 Markup.inlineKeyboard([
                   [
-                    Markup.button.callback('🔄 Yangilash', 'update_my_item'),
-                    Markup.button.callback("❌ O'chirish", `delete_my_item`),
+                    Markup.button.callback(
+                      '🔄 Yangilash',
+                      `update_my_item:${ctx.session.itemId}`,
+                    ),
+                    Markup.button.callback(
+                      "❌ O'chirish",
+                      `delete_my_item:${ctx.session.itemId}`,
+                    ),
                   ],
                 ]),
               );
@@ -789,8 +920,14 @@ Endi barcha foydalanuvchilar ko‘rishi mumkin.`,
                 'Agar hech qanday amal bajarmasangiz, tugmani bosishingiz shart emas.',
               Markup.inlineKeyboard([
                 [
-                  Markup.button.callback('🔄 Yangilash', 'update_my_item'),
-                  Markup.button.callback("❌ O'chirish", `delete_my_item`),
+                  Markup.button.callback(
+                    '🔄 Yangilash',
+                    `update_my_item:${ctx.session.itemId}`,
+                  ),
+                  Markup.button.callback(
+                    "❌ O'chirish",
+                    `delete_my_item:${ctx.session.itemId}`,
+                  ),
                 ],
               ]),
             );
@@ -809,9 +946,10 @@ Endi barcha foydalanuvchilar ko‘rishi mumkin.`,
   ): Promise<object | undefined> {
     await ctx.answerCbQuery();
     try {
-      if (ctx.from && ctx.session) {
-        const item = await this.itemService.findItemByTelegramId(ctx.from.id);
-        ctx.session.itemId = (item as ItemEntity).id;
+      if (ctx.session && ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+        const data = ctx.callbackQuery.data;
+        const itemId = data.split(':')[1];
+        ctx.session.itemId = itemId;
       }
       await ctx.reply(
         `Qaysi malumotingizni yangilamohchisz?`,
@@ -834,9 +972,9 @@ Endi barcha foydalanuvchilar ko‘rishi mumkin.`,
   ): Promise<object | undefined> {
     await ctx.answerCbQuery();
     try {
-      if (ctx.session) {
-        const itemId = ctx.session.itemId;
-
+      if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+        const data = ctx.callbackQuery.data;
+        const itemId = data.split(':')[1];
         const deletedItem = await this.itemService.deleteItemById(
           itemId as string,
         );
@@ -928,6 +1066,7 @@ Endi barcha foydalanuvchilar ko‘rishi mumkin.`,
 
 Yangi e'lon berish \\- Yo'qolgan yoki topilgan buyumlarni e'longa berish  
 E'lonlarni ko'rish \\- Barcha yo'qolgan yoki topilgan buyumlarni ko'rish
+Mening e'lonlarim \\- Foydalanuvchiga tegishli barcha e'lonlarni ko'rish
 
 Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https://t.me/MarufovD)`,
         { parse_mode: 'MarkdownV2' },
@@ -944,6 +1083,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
 Yangi e'lon berish \\- Yo'qolgan yoki topilgan buyumlarni e'longa berish  
 E'lonlarni ko'rish \\- Barcha yo'qolgan yoki topilgan buyumlarni ko'rish
+Mening e'lonlarim \\- Foydalanuvchiga tegishli barcha e'lonlarni ko'rish
 
 Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https://t.me/MarufovD)`,
         { parse_mode: 'MarkdownV2' },
@@ -975,10 +1115,11 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
         );
 
         if (updatedItem) {
-          await ctx.reply(`Buyum nomi muvaffaqiyatli o'zgardi`);
+          await ctx.reply(`✅ Buyum nomi muvaffaqiyatli yangilandi`);
           return;
+        } else {
+          await ctx.reply(`❌ Buyum nomini yangilashda xatolik`);
         }
-        await ctx.reply(`Tizimda xatolik`);
       }
 
       if (
@@ -1001,10 +1142,10 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
         );
 
         if (updatedLocation) {
-          await ctx.reply(`Buyum joyi muvaffaqiyatli o'zgardi`);
+          await ctx.reply(`✅ Buyum joyi muvaffaqiyatli yangilandi`);
           return;
         }
-        await ctx.reply(`Tizimda xatolik`);
+        await ctx.reply(`❌ Buyum joyini yangilashda xatolik`);
       }
 
       if (
@@ -1017,9 +1158,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
         const checkDash = text.split('');
         if (checkDash[4] !== '-' && checkDash[7] !== '-') {
-          await ctx.reply(
-            `❌ Iltimos korsatilgan korinishida sanani kiriting!`,
-          );
+          await ctx.reply(`❌ Iltimos korsatilgan korinishida sanani kiriting`);
           return;
         }
 
@@ -1030,23 +1169,42 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
           return;
         }
         const [year, month, day] = text.split('-');
+        const formattedMonth = Number(month) < 10 ? `0${Number(month)}` : month;
+        const formattedDay = Number(day) < 10 ? `0${Number(day)}` : day;
+        const isValidYear = /^\d+$/.test(year);
+        const isValidMonth = /^\d+$/.test(month);
+        const isValidDay = /^\d+$/.test(day);
+
+        if (!isValidYear || !isValidMonth || !isValidDay) {
+          await ctx.reply(`❌ Yil,oy yoki kun faqat sonda kiritilishi kerak`);
+          return;
+        }
+
+        if (formattedMonth === '02') {
+          if (Number(formattedDay) > 29) {
+            await ctx.reply(
+              `❌ Fevral oyida maksimal 28 kun bo'lishi mumkin. Kabisa yili bo'lsa, 29 kun bo'ladi`,
+            );
+            return;
+          }
+        }
 
         const currentYear = new Date().getFullYear();
         if (Number(year) > currentYear) {
           await ctx.reply(
-            `❌ Hali bunday yil kelmadi. Hozir ${currentYear}-yil.`,
+            `❌ Hali bunday yil kelmadi. Hozir ${currentYear}-yil`,
           );
           return;
         }
 
         if (Number(month) > 12) {
-          await ctx.reply(`❌ Bunday oy mavjud emas.`);
+          await ctx.reply(`❌ Bunday oy mavjud emas`);
           return;
         }
 
         if (Number(day) > 31) {
           await ctx.reply(
-            `❌ Oyda maksimum 31 kun bo‘ladi. Ba'zi oylarda 30 yoki 28-29 kun bor.`,
+            `❌ Oyda maksimum 31 kun bo‘ladi. Ba'zi oylarda 30 yoki 28-29 kun bor`,
           );
 
           return;
@@ -1062,10 +1220,10 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
         );
 
         if (updatedItem) {
-          await ctx.reply(`Buyum sanasi muvaffaqiyatli o'zgardi`);
+          await ctx.reply(`✅ Buyum sanasi muvaffaqiyatli yangilandi`);
           return;
         }
-        await ctx.reply(`Tizimda xatolik`);
+        await ctx.reply(`❌ Buyum sanasini yangilashda xatolik`);
       }
 
       if (
@@ -1094,6 +1252,14 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
         const [hour, minute] = text.split(':');
 
+        const isValidHour = /^\d+$/.test(hour);
+        const isValidMinute = /^\d+$/.test(minute);
+
+        if (!isValidHour || !isValidMinute) {
+          await ctx.reply(`❌ Soat yoki daqiqa faqat sonda kiritilishi kerak`);
+          return;
+        }
+
         if (Number(hour) > 23) {
           await ctx.reply(`❌ 1 kunda 24 soat mavjud`);
           return;
@@ -1114,10 +1280,10 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
         );
 
         if (updatedItem) {
-          await ctx.reply(`Buyum vahti muvaffaqiyatli o'zgardi`);
+          await ctx.reply(`✅ Buyum vahti muvaffaqiyatli yangilandi`);
           return;
         }
-        await ctx.reply(`Tizimda xatolik`);
+        await ctx.reply(`❌ Buyum vahtini yangilashda xatolik`);
       }
 
       if (
@@ -1138,10 +1304,10 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
         );
 
         if (updatedItem) {
-          await ctx.reply(`Buyum tavsifi muvaffaqiyatli o'zgardi`);
+          await ctx.reply(`✅ Buyum tavsifi muvaffaqiyatli yangilandi`);
           return;
         }
-        await ctx.reply(`Tizimda xatolik`);
+        await ctx.reply(`❌ Buyum tavsifini yangilashda xatolik`);
       }
 
       if (
@@ -1156,7 +1322,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
             itemId as string,
           );
           if (item) {
-            await ctx.reply(`Xabar foydalanuvchiga yuborildi`);
+            await ctx.reply(`✅ Xabar foydalanuvchiga yuborildi`);
             const userId = (item as ItemEntity).user.telegram_id;
             await sendMessageFuncionReject(
               userId,
@@ -1181,7 +1347,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
           const username = String(ctx.from.username);
           if (!username) {
             await ctx.reply(
-              `Sizda username mavjud emas, Iltimos username qo'yib keyin yana qayta urinib ko'ring!`,
+              `❌ Sizda username mavjud emas, Iltimos username qo'yib keyin yana qayta urinib ko'ring`,
             );
             return;
           }
@@ -1197,7 +1363,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
           await this.userService.create(createUserDto);
 
           await ctx.reply(
-            `Rahmat! Ma'lumotlaringiz saqlandi va ularning xavfsizligi admin tomonidan kafolatlanadi.`,
+            `✅ Rahmat! Ma'lumotlaringiz saqlandi va ularning xavfsizligi admin tomonidan kafolatlanadi`,
           );
 
           await this.onMain(ctx);
@@ -1229,10 +1395,10 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
           ctx.session.state = 'entering_found_item_location';
           await ctx.reply(
-            "Buyumni qayerda topdingiz yoki yo'qotdingiz?\n\n" +
-              'Lokatsiya va manzilni yozib yuboring.\n' +
-              'Viloyat yoki Shahar va Tuman.\n' +
-              'Misol Toshkent Shahar Chilonzor tumani',
+            "📍 Buyumni qayerda topdingiz yoki yo'qotdingiz?\n\n" +
+              "Iltimos, lokatsiya va manzilni to'liq yozing.\n" +
+              'Viloyat/Shahar va tuman nomini kiriting.\n\n' +
+              '📝 Masalan: Toshkent shahar, Chilonzor tumani',
           );
         }
       } else if (ctx.session.state === 'entering_found_item_location') {
@@ -1248,7 +1414,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
             region = LocationRegion.TASHKENT_VILOYAT;
           } else {
             await ctx.reply(
-              `Bizda hozircha faqat Toshkent shahar va Toshkent viloyat mavjud!`,
+              `❌ Bizda hozircha faqat Toshkent shahar va Toshkent viloyat mavjud`,
             );
             return;
           }
@@ -1308,10 +1474,10 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
           ctx.session.state = 'entering_found_item_descriptionLocation';
           await ctx.reply(
-            ` Iltimos, buyumni topgan yoki yo'qotgan joyingizni aniq ko'rsating.\n\n` +
-              `Masalan:\n` +
-              `Chilonzor tumani, 19-kvartal, 24-dom yonida.\n\n` +
-              ` Iloji boricha to'liq va tushunarli lokatsiya yozing.`,
+            "📍 Iltimos, buyumni topgan yoki yo'qotgan joyingizni aniq ko'rsating.\n\n" +
+              '📝 Masalan:\n' +
+              'Chilonzor tumani, 19-kvartal, 24-dom yonida.\n\n' +
+              "ℹ️ Iloji boricha to'liq va tushunarli lokatsiya yozing.",
           );
         }
       } else if (
@@ -1319,14 +1485,14 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
       ) {
         if (ctx.message && 'text' in ctx.message) {
           // Item desciptionLocation
-          const description = ctx.message.text.toLowerCase();
+          const description = ctx.message.text;
 
           const inputDistrict = description.split(' ')[0].toLowerCase();
 
           if (ctx.session) {
             if (ctx.session.district !== inputDistrict) {
               await ctx.reply(
-                'Oldin kiritgan tumaningiz bilan hozir kiritgan tumaningiz bir xil emas.',
+                '❌ Oldin kiritgan tumaningiz bilan hozir kiritgan tumaningiz bir xil emas',
               );
               return;
             }
@@ -1335,9 +1501,9 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
           ctx.session.state = 'entering_found_item_date';
           await ctx.reply(
-            "Buyumni topgan yoki yo'qotgan sanani quyidagi formatda kiriting:\n\n" +
-              ' YIL-OY-KUN\n' +
-              ' Masalan: 2020-04-04',
+            "📅 Iltimos, buyumni topgan yoki yo'qotgan sanani quyidagi formatda kiriting:\n\n" +
+              '📌 Format: YIL-OY-KUN\n' +
+              '📝 Masalan: 2020-04-04',
           );
         }
       } else if (ctx.session.state === 'entering_found_item_date') {
@@ -1347,7 +1513,7 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
           const checkDash = date.split('');
           if (checkDash[4] !== '-' && checkDash[7] !== '-') {
             await ctx.reply(
-              `❌ Iltimos korsatilgan korinishida sanani kiriting!`,
+              `❌ Iltimos korsatilgan korinishida sanani kiriting`,
             );
             return;
           }
@@ -1359,23 +1525,44 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
             return;
           }
           const [year, month, day] = date.split('-');
+          const formattedMonth =
+            Number(month) < 10 ? `0${Number(month)}` : month;
+          const formattedDay = Number(day) < 10 ? `0${Number(day)}` : day;
+
+          const isValidYear = /^\d+$/.test(year);
+          const isValidMonth = /^\d+$/.test(formattedMonth);
+          const isValidDay = /^\d+$/.test(formattedDay);
+
+          if (!isValidYear || !isValidMonth || !isValidDay) {
+            await ctx.reply(`❌ Yil,oy yoki kun faqat sonda kiritilishi kerak`);
+            return;
+          }
+
+          if (formattedMonth === '02') {
+            if (Number(formattedDay) > 29) {
+              await ctx.reply(
+                `❌ Fevral oyida maksimal 28 kun bo'lishi mumkin. Kabisa yili bo'lsa, 29 kun bo'ladi`,
+              );
+              return;
+            }
+          }
 
           const currentYear = new Date().getFullYear();
           if (Number(year) > currentYear) {
             await ctx.reply(
-              `❌ Hali bunday yil kelmadi. Hozir ${currentYear}-yil.`,
+              `❌ Hali bunday yil kelmadi. Hozir ${currentYear}-yil`,
             );
             return;
           }
 
           if (Number(month) > 12) {
-            await ctx.reply(`❌ Bunday oy mavjud emas.`);
+            await ctx.reply(`❌ Bunday oy mavjud emas`);
             return;
           }
 
           if (Number(day) > 31) {
             await ctx.reply(
-              `❌ Oyda maksimum 31 kun bo‘ladi. Ba'zi oylarda 30 yoki 28-29 kun bor.`,
+              `❌ Oyda maksimum 31 kun bo‘ladi. Ba'zi oylarda 30 yoki 28-29 kun bor`,
             );
 
             return;
@@ -1385,9 +1572,9 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
           ctx.session.state = 'entering_found_item_time';
           await ctx.reply(
-            "Buyumni taxminan soat nechchida topganingizni yoki yo'qotganingizni kiriting:\n\n" +
-              ' Format: SOAT-MINUT\n' +
-              ' Masalan: 13:30',
+            "⏰ Iltimos, buyumni taxminan soat nechchida topganingizni yoki yo'qotganingizni kiriting:\n\n" +
+              '📌 Format: SOAT:MINUT\n' +
+              '📝 Masalan: 13:30',
           );
         }
       } else if (ctx.session.state === 'entering_found_item_time') {
@@ -1413,6 +1600,16 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
           const [hour, minute] = time.split(':');
 
+          const isValidHour = /^\d+$/.test(hour);
+          const isValidMinute = /^\d+$/.test(minute);
+
+          if (!isValidHour || !isValidMinute) {
+            await ctx.reply(
+              `❌ Soat yoki daqiqa faqat sonda kiritilishi kerak`,
+            );
+            return;
+          }
+
           if (Number(hour) > 23) {
             await ctx.reply(`❌ 1 kunda 24 soat mavjud`);
             return;
@@ -1427,15 +1624,17 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
 
           if (ctx.session.type === ItemType.FOUND) {
             ctx.session.state = 'entering_found_item_images';
-            await ctx.reply('Topgan buyumingizning rasmini yuklang!');
-          } else if (ctx.session.type === ItemType.LOST) {
-            ctx.session.state = 'entering_found_item_images';
+            ctx.session.found_images = [];
             await ctx.reply(
-              ` Yo‘qolgan buyumingizning rasmi bormi?
-
- Agar rasm mavjud bo‘lsa, iltimos, uni shu yerga yuklang.
-
- Agar rasm mavjud bo‘lmasa, “Yo‘q” tugmasini bosing va davom eting.`,
+              '🖼️ Iltimos, topgan buyumingizning rasmini shu yerga yuklang',
+            );
+          } else if (ctx.session.type === ItemType.LOST) {
+            ctx.session.state = 'entering_lost_item_images';
+            ctx.session.lost_images = [];
+            await ctx.reply(
+              '🖼️ Yo‘qolgan buyumingizning rasmi bormi?\n\n' +
+                'Agar rasm mavjud bo‘lsa, iltimos, shu yerga yuklang\n\n' +
+                '❌ Agar rasm mavjud bo‘lmasa, “Yo‘q” tugmasini bosing va davom eting',
               Markup.inlineKeyboard([
                 [Markup.button.callback('Yoq', 'not_available')],
               ]),
@@ -1452,11 +1651,10 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
     try {
       if (ctx.message && 'photo' in ctx.message && ctx.session) {
         if (ctx.session.state === 'entering_found_item_images') {
-          // Item images
           const largestPhoto = ctx.message.photo[ctx.message.photo.length - 1];
 
-          ctx.session.images = ctx.session.images || [];
-          ctx.session.images.push(largestPhoto.file_id);
+          ctx.session.found_images = ctx.session.found_images || [];
+          ctx.session.found_images.push(largestPhoto.file_id);
 
           if (ctx.session.saveImagesTimeout) {
             clearTimeout(ctx.session.saveImagesTimeout);
@@ -1474,10 +1672,37 @@ Biron bir taklif yoki savollar bo'lsa admin bilan bog'laning: [@MarufovD](https:
                   [Markup.button.callback("Yo'q", 'not')],
                 ]),
               );
+              return;
+            }
+          }, 800);
+        } else if (ctx.session.state === 'entering_lost_item_images') {
+          const largestPhoto = ctx.message.photo[ctx.message.photo.length - 1];
+
+          ctx.session.lost_images = ctx.session.lost_images || [];
+          ctx.session.lost_images.push(largestPhoto.file_id);
+
+          if (ctx.session.saveImagesTimeout) {
+            clearTimeout(ctx.session.saveImagesTimeout);
+          }
+
+          ctx.session.saveImagesTimeout = setTimeout(async () => {
+            if (ctx.session) {
+              delete ctx.session.saveImagesTimeout;
+
+              ctx.session.state = 'confirming_found_item_announcement';
+              await ctx.reply(
+                `E'lonni tasdiqlaysizmi?`,
+                Markup.inlineKeyboard([
+                  [Markup.button.callback('Ha', 'yes')],
+                  [Markup.button.callback("Yo'q", 'not')],
+                ]),
+              );
+              return;
             }
           }, 800);
         }
       }
+      // Item images
     } catch (e) {
       return errorCatch(e);
     }
